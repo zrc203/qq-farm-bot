@@ -34,8 +34,8 @@ QQ经典农场 挂机脚本
 ====================
 
 用法:
-  node client.js --code <登录code> [--wx] [--interval <秒>] [--friend-interval <秒>]
-  node client.js --qr [--interval <秒>] [--friend-interval <秒>]
+  node client.js --code <登录code> [--wx] [--interval <秒>] [--friend-interval <秒>] [--master <0|1>]
+  node client.js --qr [--interval <秒>] [--friend-interval <秒>] [--master <0|1>]
   node client.js --verify
   node client.js --decode <数据> [--hex] [--gate] [--type <消息类型>]
 
@@ -45,6 +45,7 @@ QQ经典农场 挂机脚本
   --wx                使用微信登录 (默认为QQ小程序)
   --interval          自己农场巡查完成后等待秒数, 默认10秒, 最低10秒
   --friend-interval   好友巡查完成后等待秒数, 默认1秒, 最低1秒
+  --master            大师模式, 0=只收被偷过的菜且不偷好友, 1=正常模式(默认)
   --verify            验证proto定义
   --decode            解码PB数据 (运行 --decode 无参数查看详细帮助)
 
@@ -73,6 +74,7 @@ function parseArgs(args) {
         name: '',
         certId: '',
         certType: 0,
+        master: 0,  // 默认0: 只收被偷过的菜且不偷好友
     };
 
     for (let i = 0; i < args.length; i++) {
@@ -92,6 +94,10 @@ function parseArgs(args) {
         if (args[i] === '--friend-interval' && args[i + 1]) {
             const sec = parseInt(args[++i]);
             CONFIG.friendCheckInterval = Math.max(sec, 1) * 1000;  // 最低1秒
+        }
+        if (args[i] === '--master' && args[i + 1]) {
+            const val = parseInt(args[++i]);
+            options.master = val === 1 ? 1 : 0;  // 只有1才启用大师模式，其他值都是0
         }
     }
     return options;
@@ -152,15 +158,16 @@ async function main() {
     emitRuntimeHint(true);
 
     const platformName = CONFIG.platform === 'wx' ? '微信' : 'QQ';
-    console.log(`[启动] ${platformName} code=${options.code.substring(0, 8)}... 农场${CONFIG.farmCheckInterval / 1000}s 好友${CONFIG.friendCheckInterval / 1000}s`);
+    const masterMode = options.master === 1 ? '大师' : '普通';
+    console.log(`[启动] ${platformName} code=${options.code.substring(0, 8)}... 农场${CONFIG.farmCheckInterval / 1000}s 好友${CONFIG.friendCheckInterval / 1000}s 模式:${masterMode}`);
 
     // 连接并登录，登录成功后启动各功能模块
     connect(options.code, async () => {
         // 处理邀请码 (仅微信环境)
         await processInviteCodes();
         
-        startFarmCheckLoop();
-        startFriendCheckLoop();
+        startFarmCheckLoop(options.master);
+        startFriendCheckLoop(options.master);
         initTaskSystem();
         
         // 启动时立即检查一次背包

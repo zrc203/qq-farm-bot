@@ -71,6 +71,21 @@ node client.js --code <你的登录code> --wx
 node client.js --code <code> --interval 5 --friend-interval 2
 ```
 
+### 大师模式（只收被偷过的菜）
+
+```bash
+# 普通模式(默认)：只收获被偷过的菜，不偷好友
+node client.js --code <code> --master 0
+
+# 大师模式：正常收获和偷菜
+node client.js --code <code> --master 1
+```
+
+当 `--master 0` 时：
+- 自己的成熟作物只有被好友偷过后才会收获（等待被偷）
+- 不会偷取好友的菜
+- 状态栏显示 `等偷:X` 表示有多少块地的菜在等待被偷
+
 ### 参数说明
 
 | 参数 | 说明 | 默认值 |
@@ -79,6 +94,7 @@ node client.js --code <code> --interval 5 --friend-interval 2
 | `--wx` | 使用微信登录 | QQ 小程序 |
 | `--interval` | 自己农场巡查间隔（秒） | 2 |
 | `--friend-interval` | 好友巡查间隔（秒） | 1 |
+| `--master` | 大师模式: 0=只收被偷过的菜且不偷好友, 1=正常模式 | 0 |
 | `--verify` | 验证 proto 定义是否正确 | — |
 | `--decode` | 进入 PB 数据解码模式 | — |
 
@@ -224,7 +240,12 @@ const CONFIG = {
     friendCheckInterval: 10000,  // 好友巡查完成后等待间隔
     forceLowestLevelCrop: false, // true: 固定最低等级作物（白萝卜优先），跳过经验效率分析
 };
+
+// 不偷菜的好友黑名单（填写好友昵称）
+const STEAL_BLACKLIST = ['哈哈'];
 ```
+
+将不想偷的好友昵称添加到 `STEAL_BLACKLIST` 数组中，脚本将自动跳过这些好友。
 
 ### src/friend.js
 

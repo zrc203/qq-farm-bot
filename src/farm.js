@@ -15,6 +15,7 @@ let isCheckingFarm = false;
 let isFirstFarmCheck = true;
 let farmCheckTimer = null;
 let farmLoopRunning = false;
+let masterMode = 0;  // 0=普通模式(只收被偷过的菜), 1=大师模式(正常收获)
 
 // ============ 农场 API ============
 
@@ -367,6 +368,7 @@ function analyzeLands(lands) {
         harvestable: [], needWater: [], needWeed: [], needBug: [],
         growing: [], empty: [], dead: [],
         harvestableInfo: [],  // 收获植物的详细信息 { id, name, exp }
+        harvestableButNotStolen: [],  // 可收获但未被偷过的菜(master=0时不收)
     };
 
     const nowSec = getServerTimeSec();
@@ -415,18 +417,30 @@ function analyzeLands(lands) {
         }
 
         if (phaseVal === PlantPhase.MATURE) {
-            result.harvestable.push(id);
-            // 收集植物信息用于日志
-            const plantId = toNum(plant.id);
-            const plantNameFromConfig = getPlantName(plantId);
-            const plantExp = getPlantExp(plantId);
-            result.harvestableInfo.push({
-                landId: id,
-                plantId,
-                name: plantNameFromConfig || plantName,
-                exp: plantExp,
-            });
-            if (debug) console.log(`    → 结果: 可收获 (${plantNameFromConfig} +${plantExp}经验)`);
+            // 检查是否被偷过 (stole_num > 0 或 stealers 数组非空)
+            const stoleNum = toNum(plant.stole_num);
+            const stealers = plant.stealers || [];
+            const wasStolen = stoleNum > 0 || stealers.length > 0;
+
+            // master=0(普通模式)时，只收被偷过的菜；master=1(大师模式)时，正常收获
+            if (masterMode === 1 || wasStolen) {
+                result.harvestable.push(id);
+                // 收集植物信息用于日志
+                const plantId = toNum(plant.id);
+                const plantNameFromConfig = getPlantName(plantId);
+                const plantExp = getPlantExp(plantId);
+                result.harvestableInfo.push({
+                    landId: id,
+                    plantId,
+                    name: plantNameFromConfig || plantName,
+                    exp: plantExp,
+                });
+                if (debug) console.log(`    → 结果: 可收获 (${plantNameFromConfig} +${plantExp}经验)${masterMode === 0 ? ' [已被偷]' : ''}`);
+            } else {
+                // master=0时，菜成熟了但还没被偷，先不收
+                result.harvestableButNotStolen.push(id);
+                if (debug) console.log(`    → 结果: 可收获但未被偷 (等待被偷后再收)`);
+            }
             continue;
         }
 
@@ -505,7 +519,7 @@ async function checkFarm() {
         if (status.empty.length) statusParts.push(`空:${status.empty.length}`);
         statusParts.push(`长:${status.growing.length}`);
 
-        const hasWork = status.harvestable.length || status.needWeed.length || status.needBug.length
+        const hasWork = status.harvestable.length || status.harvestableButNotStolen.length || status.needWeed.length || status.needBug.length
             || status.needWater.length || status.dead.length || status.empty.length;
 
         // 执行操作并收集结果
@@ -569,9 +583,10 @@ async function farmCheckLoop() {
     }
 }
 
-function startFarmCheckLoop() {
+function startFarmCheckLoop(master = 0) {
     if (farmLoopRunning) return;
     farmLoopRunning = true;
+    masterMode = master;
 
     // 监听服务器推送的土地变化事件
     networkEvents.on('landsChanged', onLandsChangedPush);

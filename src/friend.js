@@ -2,7 +2,7 @@
  * 好友农场操作 - 进入/离开/帮忙/偷菜/巡查
  */
 
-const { CONFIG, PlantPhase, PHASE_NAMES } = require('./config');
+const { CONFIG, PlantPhase, PHASE_NAMES, STEAL_BLACKLIST } = require('./config');
 const { types } = require('./proto');
 const { sendMsgAsync, getUserState, networkEvents } = require('./network');
 const { toLong, toNum, getServerTimeSec, log, logWarn, sleep } = require('./utils');
@@ -15,6 +15,7 @@ let isFirstFriendCheck = true;
 let friendCheckTimer = null;
 let friendLoopRunning = false;
 let lastResetDate = '';  // 上次重置日期 (YYYY-MM-DD)
+let masterMode = 0;  // 0=普通模式(不偷好友菜), 1=大师模式(正常偷菜)
 
 // 经验追踪：记录帮助前的 dayExpTimes，操作后对比是否增长
 const expTracker = new Map();       // opId -> 帮助前的 dayExpTimes
@@ -444,8 +445,9 @@ async function visitFriend(friend, totalActions, myGid) {
         }
     }
 
-    // 偷菜: 始终执行
-    if (status.stealable.length > 0) {
+    // 偷菜: master=1(大师模式)时执行，master=0(普通模式)时不偷菜，黑名单好友也不偷
+    const inBlacklist = STEAL_BLACKLIST.includes(name);
+    if (status.stealable.length > 0 && masterMode === 1 && !inBlacklist) {
         let ok = 0;
         const stolenPlants = [];
         for (let i = 0; i < status.stealable.length; i++) {
@@ -546,8 +548,11 @@ async function checkFriends() {
                 console.log(`[调试] 好友列表预览 [${name}]: steal=${stealNum} dry=${dryNum} weed=${weedNum} insect=${insectNum}`);
             }
 
-            if (hasSteal) {
-                // 有可偷的，始终加入
+            // 检查是否在偷菜黑名单中
+            const inBlacklist = STEAL_BLACKLIST.includes(name);
+
+            if (hasSteal && masterMode === 1 && !inBlacklist) {
+                // 有可偷的，只有master=1(大师模式)且不在黑名单时才加入
                 priorityFriends.push({ gid, name, level: toNum(f.level), hasSteal: true, hasHelp });
                 visitedGids.add(gid);
             } else if (hasHelp && canHelpWithExp) {
@@ -636,9 +641,10 @@ async function friendCheckLoop() {
     }
 }
 
-function startFriendCheckLoop() {
+function startFriendCheckLoop(master = 0) {
     if (friendLoopRunning) return;
     friendLoopRunning = true;
+    masterMode = master;
 
     // 注册操作限制更新回调，从农场检查中获取限制信息
     setOperationLimitsCallback(updateOperationLimits);
